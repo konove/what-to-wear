@@ -47,6 +47,7 @@ export async function fetchWeather(lat, lon) {
       "wind_speed_10m",
       "wind_gusts_10m",
     ].join(","),
+    daily: "sunrise,sunset",
     temperature_unit: "fahrenheit",
     wind_speed_unit: "mph",
     precipitation_unit: "inch",

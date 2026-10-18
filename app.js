@@ -177,6 +177,60 @@ function fmt(ms, tz, opts) {
   return new Intl.DateTimeFormat("en-US", { timeZone: tz, ...opts }).format(ms);
 }
 
+// Daylight arc: sunrise at (20, 90), sunset at (300, 90), noon at the top.
+function arcPoint(frac) {
+  const a = Math.PI * (1 - frac);
+  return { x: Math.round(160 + 140 * Math.cos(a)), y: Math.round(90 - 74 * Math.sin(a)) };
+}
+
+function span(ms) {
+  const m = Math.round(ms / 60000);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
+/** Sunrise and sunset on the ride's start date, or null if there are none. */
+function daylight(data, start, tz) {
+  const d = data.daily;
+  if (!d?.sunrise) return null;
+  const date = (ms) => fmt(ms, tz, { year: "numeric", month: "numeric", day: "numeric" });
+  const i = d.sunrise.findIndex((t) => date(t * 1000) === date(start));
+  if (i < 0 || d.sunrise[i] == null || d.sunset[i] == null) return null;
+  return { rise: d.sunrise[i] * 1000, set: d.sunset[i] * 1000 };
+}
+
+function sunArc(start, end, { rise, set }, tz) {
+  const frac = (t) => Math.min(1, Math.max(0, (t - rise) / (set - rise)));
+  const day = start >= rise && start <= set;
+  const p = day ? arcPoint(frac(start)) : { x: start < rise ? 20 : 300, y: 90 };
+  let note;
+  if (end <= rise || start >= set) note = "Whole ride in the dark. Lights on.";
+  else if (start < rise && end > set) note = "Starts and ends in the dark. Lights on.";
+  else if (start < rise) note = `Starts ${span(rise - start)} before sunrise. Lights on.`;
+  else if (end > set) note = `Ends ${span(end - set)} after sunset. Lights on.`;
+  else note = "Daylight the whole ride.";
+
+  let segment = "";
+  if (Math.min(end, set) > Math.max(start, rise)) {
+    const a = arcPoint(frac(start));
+    const b = arcPoint(frac(end));
+    segment = `<path d="M ${a.x} ${a.y} A 140 74 0 0 1 ${b.x} ${b.y}" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/>`;
+  }
+  const time = (ms) => fmt(ms, tz, { hour: "numeric", minute: "2-digit" });
+  const sun = day ? "#FFC266" : "var(--dark-cell)";
+  return `
+    <div class="sun">
+      <svg viewBox="0 0 320 104" role="img" aria-label="${esc(`Sunrise ${time(rise)}, sunset ${time(set)}. ${note}`)}">
+        <line x1="6" y1="90" x2="314" y2="90" stroke="#3A443F" stroke-width="1.5"/>
+        <path d="M 20 90 A 140 74 0 0 1 300 90" fill="none" stroke="#56615B" stroke-width="1.5" stroke-dasharray="3 5"/>
+        ${segment}
+        ${day ? `<circle cx="${p.x}" cy="${p.y}" r="17" fill="${sun}" fill-opacity="0.18"/>` : ""}
+        <circle cx="${p.x}" cy="${p.y}" r="9" fill="${sun}" stroke="${day ? sun : "var(--on-dark-muted)"}" stroke-width="2"/>
+      </svg>
+      <div class="sun-times"><span>Sunrise ${esc(time(rise))}</span><span>Sunset ${esc(time(set))}</span></div>
+      <div class="sun-note">${esc(note)}</div>
+    </div>`;
+}
+
 function rideLabel(start, end, tz) {
   const day = (ms) => fmt(ms, tz, { weekday: "short", month: "short", day: "numeric" });
   const time = (ms) => fmt(ms, tz, { hour: "numeric", minute: "2-digit" });
@@ -331,6 +385,10 @@ function render() {
             <div class="stat-detail">dressing for</div>
           </div>
         </div>
+        ${(() => {
+          const light = daylight(state.data, start, tz);
+          return light ? sunArc(start, start + state.hours * 3600e3, light, tz) : "";
+        })()}
         <div class="stats">
           ${stat(icon.temp, "Temperature", `${r0(w.low)}–${r0(w.high)}°F`, "during the ride")}
           ${stat(icon.feels, "Feels like", `${r0(w.feels_low)}°F`, "at its coldest")}
