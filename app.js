@@ -54,6 +54,12 @@ const PERFETTO_COLORS = [
   { name: "Pool Blue/Black Reflex", hex: "#A8E3DC", accent: "#1A1A1A" },
 ];
 
+const BIBS_COLORS = [
+  { name: "Black", hex: "#1A1A1A" },
+  { name: "Savile Blue", hex: "#2C3E66" },
+  { name: "Grey", hex: "#5B5E63" },
+];
+
 const EMERGENCY_COLORS = [
   { name: "Light Black", hex: "#2B2B2D" },
   { name: "White", hex: "#F2F2F2" },
@@ -68,8 +74,9 @@ const WARDROBE = {
   [wear.PERFETTO]: { zone: "Torso", kind: "Wind and rain jacket", shape: "longsleeve", colors: PERFETTO_COLORS, color: 0 },
   [wear.EMERGENCY]: { zone: "Torso", kind: "Rain shell", shape: "longsleeve", colors: EMERGENCY_COLORS, color: 0 },
   [wear.GLOVES]: { zone: "Hands", kind: "Full-finger gloves", shape: "gloves", colors: BLACK_ONLY, color: 0 },
-  [wear.BIBS]: { zone: "Legs", kind: "Bibs", shape: "bibs", colors: GENERIC_COLORS, color: 1 },
-  [wear.KNEE_WARMERS]: { zone: "Legs", kind: "Warmers", shape: "warmers", colors: GENERIC_COLORS, color: 1 },
+  [wear.BIBS]: { zone: "Legs", kind: "Free Aero Race 4", shape: "bibs", colors: BIBS_COLORS, color: 0 },
+  // Not owned yet: no colors, shown as an outline.
+  [wear.KNEE_WARMERS]: { zone: "Legs", kind: "Warmers", shape: "warmers", colors: [], color: 0 },
   [wear.TIGHTS]: { zone: "Legs", kind: "Thermal bibtights", shape: "tights", colors: BLACK_ONLY, color: 0 },
   [wear.SHOE_COVERS]: { zone: "Feet", kind: "Waterproof covers", shape: "shoecover", colors: BLACK_ONLY, color: 0 },
 };
@@ -350,6 +357,18 @@ function render() {
         </div>
         <div class="card wear">
           ${items.map(({ name, info }) => {
+            if (!info.colors.length) {
+              return `
+                <div class="item">
+                  <div class="item-row missing">
+                    <span class="thumb"><svg width="40" height="40" viewBox="0 0 48 48" aria-hidden="true"><path d="${SHAPES[info.shape]}" fill="none" stroke="#59615C" stroke-width="1.4" stroke-dasharray="3 2" stroke-linejoin="round"/></svg></span>
+                    <span class="item-text">
+                      <span class="strong">${esc(name)}</span>
+                      <span class="muted small">${esc(info.kind)} · Not in your wardrobe yet</span>
+                    </span>
+                  </div>
+                </div>`;
+            }
             const chosen = info.colors[state.colors[name] ?? info.color] || info.colors[0];
             const open = state.openItem === name;
             const pic = photo(name);
