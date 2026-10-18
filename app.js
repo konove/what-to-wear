@@ -87,6 +87,33 @@ const MIN_HOURS = 0.5;
 const MAX_HOURS = 8;
 const STALE_MS = 30 * 60 * 1000;
 
+// The forecast and the rules stay in °F, mph and inches, as in
+// what_to_wear.py; these only change what is shown.
+const UNITS = {
+  imperial: {
+    temp: (f) => f,
+    tempDelta: (f) => f,
+    deg: "°F",
+    speed: (mph) => `${wear.round0(mph)} mph`,
+    rain: (inches) => `${inches.toFixed(2)} in/hour`,
+  },
+  metric: {
+    temp: (f) => (f - 32) * 5 / 9,
+    tempDelta: (f) => f * 5 / 9,
+    deg: "°C",
+    speed: (mph) => `${wear.round0(mph * 1.609344)} km/h`,
+    rain: (inches) => `${(inches * 25.4).toFixed(1)} mm/hour`,
+  },
+};
+
+/** Rewrites the °F figures in recommend()'s notes. */
+function localizeNote(note, u, w) {
+  if (u === UNITS.imperial) return note;
+  return note
+    .replace(/~(\d+)°F/, (_, f) => `~${wear.round0(u.temp(Number(f)))}${u.deg}`)
+    .replace(/by \d+°F/, `by ${wear.round0(u.tempDelta(w.high - w.low))}${u.deg}`);
+}
+
 //
 // State. Settings persist per device; the forecast lives in memory.
 //
@@ -101,6 +128,7 @@ const defaults = {
   customTime: "16:00",
   hours: 1.5,
   colors: {},
+  units: "imperial",
 };
 
 const state = {
@@ -126,9 +154,9 @@ function load(key) {
 }
 
 function save() {
-  const { place, start, morningHour, customTime, hours, colors } = state;
+  const { place, start, morningHour, customTime, hours, colors, units } = state;
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ place, start, morningHour, customTime, hours, colors }));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ place, start, morningHour, customTime, hours, colors, units }));
   } catch {}
 }
 
@@ -350,6 +378,13 @@ function render() {
           <button class="round" data-action="hours" data-delta="0.5" aria-label="Longer ride" ${state.hours >= MAX_HOURS ? "disabled" : ""}>${icon.plus}</button>
         </div>
       </div>
+      <div class="sub-row">
+        <div class="eyebrow">Units</div>
+        <div class="segmented">
+          <button data-action="units" data-units="imperial" aria-pressed="${state.units !== "metric"}">°F · mph</button>
+          <button data-action="units" data-units="metric" aria-pressed="${state.units === "metric"}">°C · km/h</button>
+        </div>
+      </div>
     </section>`;
 
   let verdict;
@@ -367,6 +402,7 @@ function render() {
   } else {
     const { w, r } = ride;
     const r0 = wear.round0;
+    const u = UNITS[state.units] || UNITS.imperial;
     const stat = (ic, label, value, detail, hot) => `
       <div class="stat${hot ? " hot" : ""}">
         <div class="stat-label">${ic}<span>${label}</span></div>
@@ -381,7 +417,7 @@ function render() {
             <div class="band">${esc(r.band)}</div>
           </div>
           <div class="cold">
-            <div class="cold-value">${r0(r.cold)}°</div>
+            <div class="cold-value">${r0(u.temp(r.cold))}°</div>
             <div class="stat-detail">dressing for</div>
           </div>
         </div>
@@ -390,10 +426,10 @@ function render() {
           return light ? sunArc(start, start + state.hours * 3600e3, light, tz) : "";
         })()}
         <div class="stats">
-          ${stat(icon.temp, "Temperature", `${r0(w.low)}–${r0(w.high)}°F`, "during the ride")}
-          ${stat(icon.feels, "Feels like", `${r0(w.feels_low)}°F`, "at its coldest")}
-          ${stat(icon.rain, "Rain", `${r0(w.rain_probability)}%`, `up to ${w.rain_max_hourly.toFixed(2)} in/hour`, r.wet)}
-          ${stat(icon.wind, "Wind", `${r0(w.wind)} mph`, `gusts ${r0(w.gusts)} mph`, r.windy)}
+          ${stat(icon.temp, "Temperature", `${r0(u.temp(w.low))}–${r0(u.temp(w.high))}${u.deg}`, "during the ride")}
+          ${stat(icon.feels, "Feels like", `${r0(u.temp(w.feels_low))}${u.deg}`, "at its coldest")}
+          ${stat(icon.rain, "Rain", `${r0(w.rain_probability)}%`, `up to ${u.rain(w.rain_max_hourly)}`, r.wet)}
+          ${stat(icon.wind, "Wind", u.speed(w.wind), `gusts ${u.speed(w.gusts)}`, r.windy)}
         </div>
         ${w.partial ? `<div class="warning small">The forecast ends before your ride does.</div>` : ""}
       </section>`;
@@ -405,7 +441,10 @@ function render() {
     const items = r.layers
       .map((name, i) => ({ name, i, info: WARDROBE[name] }))
       .sort((a, b) => ZONES.indexOf(a.info.zone) - ZONES.indexOf(b.info.zone) || a.i - b.i);
-    const notes = r.notes.filter((n) => !n.startsWith(wear.CARRY_PREFIX));
+    const u = UNITS[state.units] || UNITS.imperial;
+    const notes = r.notes
+      .filter((n) => !n.startsWith(wear.CARRY_PREFIX))
+      .map((n) => localizeNote(n, u, ride.w));
 
     kit = `
       <section class="stack-8">
@@ -596,6 +635,8 @@ root.addEventListener("click", (e) => {
     set({ start: el.dataset.start }, { persist: true });
   } else if (action === "morning-hour") {
     set({ morningHour: Number(el.dataset.hour) }, { persist: true });
+  } else if (action === "units") {
+    set({ units: el.dataset.units }, { persist: true });
   } else if (action === "hours") {
     const hours = Math.min(MAX_HOURS, Math.max(MIN_HOURS, state.hours + Number(el.dataset.delta)));
     set({ hours }, { persist: true });
